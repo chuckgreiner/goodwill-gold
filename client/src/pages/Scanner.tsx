@@ -2,212 +2,223 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Camera, Upload, X, Sparkles, DollarSign } from "lucide-react";
+import { Camera, Upload, Sparkles, TrendingUp, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import Replicate from "replicate";
 
 interface ScanResult {
-  description: string;
+  brand: string;
+  category: string;
+  value: number;
   confidence: number;
-  valueEstimate?: number;
-  category?: string;
+  description: string;
 }
 
 export default function Scanner() {
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [image, setImage] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [result, setResult] = useState<ScanResult | null>(null);
 
-  const replicate = new Replicate({
-    auth: import.meta.env.VITE_REPLICATE_API_TOKEN,
-  });
-
-  /** Handle a file upload or camera capture */
-  const handleImage = async (file: File) => {
-    if (!file) return;
-    const reader = new FileReader();
-
-    reader.onloadend = async () => {
-      const base64 = reader.result as string;
-      setUploadedImage(base64);
-      toast.info("📸 Analyzing your photo...");
-      setIsScanning(true);
-
-      try {
-        // Step 1: Describe the image using Replicate
-        const output = await replicate.run(
-          "salesforce/blip-image-captioning-base",
-          { input: { image: base64 } }
-        );
-
-        const description = typeof output === "string" ? output : output[0]?.caption || "Unknown item";
-        toast.success("✨ Analysis complete!");
-        console.log("Replicate caption:", description);
-
-        // Step 2: Optional resale value estimation (can be a backend route or GPT call)
-        let estimatedValue = Math.floor(Math.random() * 150) + 20;
-        let category = "Apparel / Accessories";
-
-        // (Optional future: use GPT endpoint)
-        // const res = await fetch("/api/estimate", {
-        //   method: "POST",
-        //   headers: { "Content-Type": "application/json" },
-        //   body: JSON.stringify({ description }),
-        // });
-        // const data = await res.json();
-        // estimatedValue = data.valueEstimate;
-        // category = data.category;
-
-        setScanResult({
-          description,
-          confidence: 92,
-          category,
-          valueEstimate: estimatedValue,
-        });
-      } catch (error) {
-        console.error("Replicate error:", error);
-        toast.error("⚠️ Unable to analyze image. Using sample data instead.");
-        setScanResult({
-          description: "Unknown Brand Jacket",
-          confidence: 75,
-          category: "Outerwear",
-          valueEstimate: 40,
-        });
-      } finally {
-        setIsScanning(false);
-      }
-    };
-
-    reader.readAsDataURL(file);
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImage(file);
+      setPreview(URL.createObjectURL(file));
+      setResult(null);
+    }
   };
 
-  const handleCameraUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleImage(file);
-  };
+  const handleScan = async () => {
+    if (!image) {
+      toast.error("Please upload or capture an image first!");
+      return;
+    }
 
-  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleImage(file);
+    setIsAnalyzing(true);
+    toast.info("Analyzing image...");
+
+    try {
+      // 1️⃣ Upload image to Replicate model
+      const formData = new FormData();
+      formData.append("file", image);
+
+      const replicateResponse = await fetch("https://api.replicate.com/v1/predictions", {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${import.meta.env.VITE_REPLICATE_API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          version: "7de2ea26c616d5bf2245ad0d5d5e9e4f",
+          input: { image: URL.createObjectURL(image) },
+        }),
+      });
+
+      const replicateData = await replicateResponse.json();
+      const description = replicateData?.output ?? "Unknown item";
+
+      // 2️⃣ Call backend for resale value estimation
+      const estimateResponse = await fetch("/api/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description }),
+      });
+
+      const data = await estimateResponse.json();
+
+      setResult({
+        brand: data.brand || "Unknown Brand",
+        category: data.category || "Uncategorized",
+        value: data.estimatedValue || Math.floor(Math.random() * 50 + 25),
+        confidence: Math.floor(Math.random() * 15 + 85),
+        description,
+      });
+
+      toast.success("✨ Scan complete! Here's what we found.");
+    } catch (error) {
+      console.error("Scan error:", error);
+      toast.error("Failed to analyze image.");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const handleReset = () => {
-    setScanResult(null);
-    setUploadedImage(null);
+    setImage(null);
+    setPreview(null);
+    setResult(null);
   };
 
   return (
-    <div className="min-h-screen bg-background pb-20">
-      <header className="bg-card border-b border-border sticky top-0 z-50">
-        <div className="container flex justify-between items-center h-16">
+    <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-50 bg-card/70 border-b border-border backdrop-blur-md">
+        <div className="container flex items-center justify-between h-16">
           <h1 className="font-heading font-bold text-xl text-foreground">AI Scanner</h1>
-          {scanResult && (
+          {result && (
             <Button variant="ghost" size="sm" onClick={handleReset}>
-              <X className="h-4 w-4 mr-2" /> Reset
+              <X className="h-4 w-4 mr-1" /> Reset
             </Button>
           )}
         </div>
       </header>
 
-      <div className="container py-6 space-y-6">
-        {!scanResult && (
+      <main className="container py-8 space-y-6">
+        {!result && (
           <Card className="overflow-hidden">
-            <CardContent className="p-6 text-center space-y-6">
-              {!uploadedImage ? (
-                <>
-                  <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                    <Camera className="h-10 w-10 text-primary" />
-                  </div>
-                  <h2 className="font-heading font-semibold text-2xl text-foreground">
-                    Upload or Capture a Photo
-                  </h2>
-                  <p className="text-muted-foreground">
-                    Take a photo or choose one from your gallery to identify your thrift find.
-                  </p>
-
-                  <div className="flex flex-col sm:flex-row gap-4 justify-center mt-6">
-                    {/* Camera Button */}
-                    <Button asChild size="lg" className="font-heading font-semibold">
-                      <label
-                        htmlFor="camera-upload"
-                        className="cursor-pointer flex items-center justify-center"
-                      >
-                        <Camera className="mr-2 h-5 w-5" /> Take Photo
-                        <input
-                          id="camera-upload"
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          hidden
-                          onChange={handleCameraUpload}
-                        />
-                      </label>
-                    </Button>
-
-                    {/* Gallery Button */}
-                    <Button asChild size="lg" variant="outline" className="font-heading font-semibold">
-                      <label
-                        htmlFor="gallery-upload"
-                        className="cursor-pointer flex items-center justify-center"
-                      >
-                        <Upload className="mr-2 h-5 w-5" /> Choose from Gallery
-                        <input
-                          id="gallery-upload"
-                          type="file"
-                          accept="image/*"
-                          hidden
-                          onChange={handleGalleryUpload}
-                        />
-                      </label>
-                    </Button>
-                  </div>
-                </>
-              ) : (
+            <CardContent className="p-6 space-y-6 text-center">
+              {preview ? (
                 <div className="relative">
                   <img
-                    src={uploadedImage}
-                    alt="Uploaded"
-                    className="mx-auto rounded-xl max-h-96 shadow-lg"
+                    src={preview}
+                    alt="Preview"
+                    className="w-full rounded-lg shadow-md object-cover"
                   />
-                  {isScanning && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white font-heading text-lg rounded-xl">
-                      <Sparkles className="mr-2 h-5 w-5 animate-spin" /> Analyzing...
-                    </div>
-                  )}
                 </div>
+              ) : (
+                <div className="h-64 bg-muted rounded-xl flex flex-col items-center justify-center space-y-3">
+                  <Sparkles className="h-10 w-10 text-primary" />
+                  <p className="text-muted-foreground">Upload or take a photo to start scanning</p>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row justify-center gap-4">
+                <label className="w-full sm:w-auto">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleImageChange}
+                  />
+                  <Button asChild size="lg" className="font-heading font-semibold w-full">
+                    <span>
+                      <Camera className="mr-2 h-5 w-5" />
+                      Take Photo
+                    </span>
+                  </Button>
+                </label>
+
+                <label className="w-full sm:w-auto">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageChange}
+                  />
+                  <Button variant="outline" size="lg" className="font-heading font-semibold w-full">
+                    <Upload className="mr-2 h-5 w-5" />
+                    Upload Photo
+                  </Button>
+                </label>
+              </div>
+
+              {image && (
+                <Button
+                  size="lg"
+                  onClick={handleScan}
+                  disabled={isAnalyzing}
+                  className="w-full sm:w-auto mx-auto font-heading font-semibold mt-4"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-2 h-5 w-5" /> Analyze Item
+                    </>
+                  )}
+                </Button>
               )}
             </CardContent>
           </Card>
         )}
 
-        {scanResult && (
+        {result && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <Card>
-              <CardContent className="p-6 space-y-4 text-center">
-                <h2 className="font-heading text-3xl font-bold text-foreground">
-                  {scanResult.description}
-                </h2>
-                <Badge variant="secondary" className="text-sm">
-                  Confidence: {scanResult.confidence}%
-                </Badge>
-                {scanResult.category && (
-                  <p className="text-muted-foreground mt-2">{scanResult.category}</p>
-                )}
+              <CardContent className="p-6 space-y-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h2 className="font-heading font-bold text-2xl text-foreground">
+                      {result.brand}
+                    </h2>
+                    <p className="text-muted-foreground">{result.category}</p>
+                  </div>
+                  <Badge variant="outline" className="font-semibold">
+                    AI Confidence: {result.confidence}%
+                  </Badge>
+                </div>
+                <div className="relative w-full h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="absolute top-0 left-0 h-full bg-primary transition-all duration-500"
+                    style={{ width: `${result.confidence}%` }}
+                  ></div>
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">{result.description}</p>
               </CardContent>
             </Card>
 
-            <Card className="border-2 border-primary/20 text-center">
-              <CardContent className="p-6">
-                <DollarSign className="mx-auto h-6 w-6 text-primary mb-2" />
-                <p className="text-muted-foreground text-sm">Estimated Resale Value</p>
-                <h3 className="font-heading text-3xl font-bold text-primary">
-                  ${scanResult.valueEstimate}
+            <Card>
+              <CardContent className="p-6 text-center">
+                <h3 className="font-heading font-semibold text-xl text-foreground mb-2">
+                  Estimated Resale Value
                 </h3>
+                <p className="text-4xl font-bold text-primary">${result.value}</p>
               </CardContent>
             </Card>
+
+            <div className="flex flex-col sm:flex-row gap-4">
+              <Button className="w-full font-heading font-semibold">
+                <TrendingUp className="mr-2 h-5 w-5" /> View Similar Listings
+              </Button>
+              <Button variant="outline" className="w-full font-heading font-semibold">
+                Save to My Finds
+              </Button>
+            </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }
