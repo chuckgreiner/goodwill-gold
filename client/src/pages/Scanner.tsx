@@ -22,6 +22,7 @@ export default function Scanner() {
     auth: import.meta.env.VITE_REPLICATE_API_TOKEN,
   });
 
+  /** Handle a file upload or camera capture */
   const handleImage = async (file: File) => {
     if (!file) return;
     const reader = new FileReader();
@@ -33,21 +34,38 @@ export default function Scanner() {
       setIsScanning(true);
 
       try {
+        // Step 1: Describe the image using Replicate
         const output = await replicate.run(
-          "methexis-inc/img2prompt:latest",
+          "salesforce/blip-image-captioning-base",
           { input: { image: base64 } }
         );
 
-        const description = typeof output === "string" ? output : output[0];
-        setScanResult({
-          description: description || "Could not identify item",
-          confidence: 95,
-          category: "Apparel / Accessories",
-          valueEstimate: Math.floor(Math.random() * 100) + 20,
-        });
+        const description = typeof output === "string" ? output : output[0]?.caption || "Unknown item";
         toast.success("✨ Analysis complete!");
+        console.log("Replicate caption:", description);
+
+        // Step 2: Optional resale value estimation (can be a backend route or GPT call)
+        let estimatedValue = Math.floor(Math.random() * 150) + 20;
+        let category = "Apparel / Accessories";
+
+        // (Optional future: use GPT endpoint)
+        // const res = await fetch("/api/estimate", {
+        //   method: "POST",
+        //   headers: { "Content-Type": "application/json" },
+        //   body: JSON.stringify({ description }),
+        // });
+        // const data = await res.json();
+        // estimatedValue = data.valueEstimate;
+        // category = data.category;
+
+        setScanResult({
+          description,
+          confidence: 92,
+          category,
+          valueEstimate: estimatedValue,
+        });
       } catch (error) {
-        console.error(error);
+        console.error("Replicate error:", error);
         toast.error("⚠️ Unable to analyze image. Using sample data instead.");
         setScanResult({
           description: "Unknown Brand Jacket",
@@ -104,7 +122,7 @@ export default function Scanner() {
                     Upload or Capture a Photo
                   </h2>
                   <p className="text-muted-foreground">
-                    Choose to take a photo or pick one from your gallery.
+                    Take a photo or choose one from your gallery to identify your thrift find.
                   </p>
 
                   <div className="flex flex-col sm:flex-row gap-4 justify-center mt-6">
