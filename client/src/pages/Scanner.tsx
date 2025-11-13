@@ -22,11 +22,10 @@ export default function Scanner() {
     auth: import.meta.env.VITE_REPLICATE_API_TOKEN,
   });
 
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleImage = async (file: File) => {
     if (!file) return;
-
     const reader = new FileReader();
+
     reader.onloadend = async () => {
       const base64 = reader.result as string;
       setUploadedImage(base64);
@@ -34,28 +33,19 @@ export default function Scanner() {
       setIsScanning(true);
 
       try {
-        // Upload to Replicate model
         const output = await replicate.run(
-          "methexis-inc/img2prompt:latest", // Model that generates captions from images
-          {
-            input: {
-              image: base64,
-            },
-          }
+          "methexis-inc/img2prompt:latest",
+          { input: { image: base64 } }
         );
 
-        if (output) {
-          const description = typeof output === "string" ? output : output[0];
-          setScanResult({
-            description: description || "Could not identify item",
-            confidence: 95,
-            category: "Apparel / Accessories",
-            valueEstimate: Math.floor(Math.random() * 100) + 20,
-          });
-          toast.success("✨ Analysis complete!");
-        } else {
-          throw new Error("No result from Replicate");
-        }
+        const description = typeof output === "string" ? output : output[0];
+        setScanResult({
+          description: description || "Could not identify item",
+          confidence: 95,
+          category: "Apparel / Accessories",
+          valueEstimate: Math.floor(Math.random() * 100) + 20,
+        });
+        toast.success("✨ Analysis complete!");
       } catch (error) {
         console.error(error);
         toast.error("⚠️ Unable to analyze image. Using sample data instead.");
@@ -73,6 +63,16 @@ export default function Scanner() {
     reader.readAsDataURL(file);
   };
 
+  const handleCameraUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleImage(file);
+  };
+
+  const handleGalleryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleImage(file);
+  };
+
   const handleReset = () => {
     setScanResult(null);
     setUploadedImage(null);
@@ -85,15 +85,13 @@ export default function Scanner() {
           <h1 className="font-heading font-bold text-xl text-foreground">AI Scanner</h1>
           {scanResult && (
             <Button variant="ghost" size="sm" onClick={handleReset}>
-              <X className="h-4 w-4 mr-2" />
-              Reset
+              <X className="h-4 w-4 mr-2" /> Reset
             </Button>
           )}
         </div>
       </header>
 
       <div className="container py-6 space-y-6">
-        {/* Upload Area */}
         {!scanResult && (
           <Card className="overflow-hidden">
             <CardContent className="p-6 text-center space-y-6">
@@ -106,45 +104,71 @@ export default function Scanner() {
                     Upload or Capture a Photo
                   </h2>
                   <p className="text-muted-foreground">
-                    The AI will identify your item and estimate resale potential.
+                    Choose to take a photo or pick one from your gallery.
                   </p>
 
-                  <Button asChild size="lg" className="font-heading font-semibold">
-                    <label htmlFor="file-upload" className="cursor-pointer flex items-center justify-center">
-                      <Upload className="mr-2 h-5 w-5" /> Choose Image
-                      <input
-                        id="file-upload"
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        hidden
-                        onChange={handleUpload}
-                      />
-                    </label>
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <div className="relative">
-                    <img src={uploadedImage} alt="Uploaded" className="mx-auto rounded-xl max-h-96 shadow-lg" />
-                    {isScanning && (
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white font-heading text-lg rounded-xl">
-                        <Sparkles className="mr-2 h-5 w-5 animate-spin" /> Analyzing...
-                      </div>
-                    )}
+                  <div className="flex flex-col sm:flex-row gap-4 justify-center mt-6">
+                    {/* Camera Button */}
+                    <Button asChild size="lg" className="font-heading font-semibold">
+                      <label
+                        htmlFor="camera-upload"
+                        className="cursor-pointer flex items-center justify-center"
+                      >
+                        <Camera className="mr-2 h-5 w-5" /> Take Photo
+                        <input
+                          id="camera-upload"
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          hidden
+                          onChange={handleCameraUpload}
+                        />
+                      </label>
+                    </Button>
+
+                    {/* Gallery Button */}
+                    <Button asChild size="lg" variant="outline" className="font-heading font-semibold">
+                      <label
+                        htmlFor="gallery-upload"
+                        className="cursor-pointer flex items-center justify-center"
+                      >
+                        <Upload className="mr-2 h-5 w-5" /> Choose from Gallery
+                        <input
+                          id="gallery-upload"
+                          type="file"
+                          accept="image/*"
+                          hidden
+                          onChange={handleGalleryUpload}
+                        />
+                      </label>
+                    </Button>
                   </div>
                 </>
+              ) : (
+                <div className="relative">
+                  <img
+                    src={uploadedImage}
+                    alt="Uploaded"
+                    className="mx-auto rounded-xl max-h-96 shadow-lg"
+                  />
+                  {isScanning && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white font-heading text-lg rounded-xl">
+                      <Sparkles className="mr-2 h-5 w-5 animate-spin" /> Analyzing...
+                    </div>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>
         )}
 
-        {/* Result Display */}
         {scanResult && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <Card>
               <CardContent className="p-6 space-y-4 text-center">
-                <h2 className="font-heading text-3xl font-bold text-foreground">{scanResult.description}</h2>
+                <h2 className="font-heading text-3xl font-bold text-foreground">
+                  {scanResult.description}
+                </h2>
                 <Badge variant="secondary" className="text-sm">
                   Confidence: {scanResult.confidence}%
                 </Badge>
