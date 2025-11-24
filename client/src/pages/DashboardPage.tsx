@@ -72,9 +72,11 @@ export default function DashboardPage() {
                 <p className="text-muted-foreground">
                   Discover what’s selling hot on Poshmark, Depop, and eBay.
                 </p>
-                <Button variant="outline" size="sm" className="mt-2 font-medium">
-                  See Insights
-                </Button>
+                <Link href="/insights">
+                  <Button variant="outline" size="sm" className="mt-2 font-medium">
+                    See Insights
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
 

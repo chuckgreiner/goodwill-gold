@@ -5,6 +5,7 @@ import Home from "@/pages/Home";
 import DashboardPage from "@/pages/DashboardPage";
 import ScannerPage from "@/pages/Scanner";
 import StoresPage from "@/pages/Stores";
+import InsightsPage from "./pages/Insights";
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
       <Route path="/dashboard" component={DashboardPage} />
       <Route path="/scanner" component={ScannerPage} />
       <Route path="/stores" component={StoresPage} />
+      <Route path="/insights" component={InsightsPage} />
 
       {/* Catch-all fallback route */}
       <Route>

@@ -1,224 +1,181 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Camera, Upload, Sparkles, TrendingUp, X, Loader2 } from "lucide-react";
+import { Camera, Upload, Sparkles, X, Tag, DollarSign, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
-interface ScanResult {
-  brand: string;
-  category: string;
-  value: number;
-  confidence: number;
-  description: string;
-}
-
-export default function Scanner() {
-  const [image, setImage] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+export default function ScannerPage() {
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [result, setResult] = useState<ScanResult | null>(null);
+  const [result, setResult] = useState<any | null>(null);
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setImage(file);
-      setPreview(URL.createObjectURL(file));
-      setResult(null);
-    }
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+
+  // ---- Handle Camera ----
+  const openCamera = () => {
+    cameraInputRef.current?.click();
   };
 
-  const handleScan = async () => {
-    if (!image) {
-      toast.error("Please upload or capture an image first!");
-      return;
-    }
+  // ---- Handle Upload ----
+  const openUpload = () => {
+    uploadInputRef.current?.click();
+  };
 
+  // ---- When a photo is selected ----
+  const handleFileSelected = async (file: File) => {
+    if (!file) return;
+
+    const url = URL.createObjectURL(file);
+    setImagePreview(url);
     setIsAnalyzing(true);
-    toast.info("Analyzing image...");
+    toast("Analyzing item...");
 
+    // Send to API
     try {
-      // 1️⃣ Upload image to Replicate model
       const formData = new FormData();
-      formData.append("file", image);
+      formData.append("image", file);
 
-      const replicateResponse = await fetch("https://api.replicate.com/v1/predictions", {
+      const response = await fetch("/api/analyze", {
         method: "POST",
-        headers: {
-          Authorization: `Token ${import.meta.env.VITE_REPLICATE_API_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          version: "7de2ea26c616d5bf2245ad0d5d5e9e4f",
-          input: { image: URL.createObjectURL(image) },
-        }),
+        body: formData,
       });
 
-      const replicateData = await replicateResponse.json();
-      const description = replicateData?.output ?? "Unknown item";
+      const data = await response.json();
 
-      // 2️⃣ Call backend for resale value estimation
-      const estimateResponse = await fetch("/api/estimate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description }),
-      });
+      if (!response.ok) {
+        toast.error("Scan failed");
+        setIsAnalyzing(false);
+        return;
+      }
 
-      const data = await estimateResponse.json();
-
-      setResult({
-        brand: data.brand || "Unknown Brand",
-        category: data.category || "Uncategorized",
-        value: data.estimatedValue || Math.floor(Math.random() * 50 + 25),
-        confidence: Math.floor(Math.random() * 15 + 85),
-        description,
-      });
-
-      toast.success("✨ Scan complete! Here's what we found.");
-    } catch (error) {
-      console.error("Scan error:", error);
-      toast.error("Failed to analyze image.");
-    } finally {
-      setIsAnalyzing(false);
+      setResult(data);
+    } catch (err) {
+      toast.error("Error scanning item");
     }
+
+    setIsAnalyzing(false);
   };
 
-  const handleReset = () => {
-    setImage(null);
-    setPreview(null);
+  const reset = () => {
+    setImagePreview(null);
     setResult(null);
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-50 bg-card/70 border-b border-border backdrop-blur-md">
+    <div className="min-h-screen bg-background pb-20">
+      {/* Hidden Inputs */}
+      <input
+        type="file"
+        ref={cameraInputRef}
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files[0]) {
+            handleFileSelected(e.target.files[0]);
+          }
+        }}
+      />
+
+      <input
+        type="file"
+        ref={uploadInputRef}
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files[0]) {
+            handleFileSelected(e.target.files[0]);
+          }
+        }}
+      />
+
+      {/* Header */}
+      <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="container flex items-center justify-between h-16">
           <h1 className="font-heading font-bold text-xl text-foreground">AI Scanner</h1>
-          {result && (
-            <Button variant="ghost" size="sm" onClick={handleReset}>
-              <X className="h-4 w-4 mr-1" /> Reset
+          {imagePreview && (
+            <Button variant="ghost" size="sm" onClick={reset}>
+              <X className="h-4 w-4 mr-2" /> Reset
             </Button>
           )}
         </div>
       </header>
 
-      <main className="container py-8 space-y-6">
-        {!result && (
+      <div className="container py-6 space-y-6">
+        {/* BEFORE SCAN */}
+        {!imagePreview && !result && (
+          <Card className="p-6 text-center space-y-6">
+            <div className="h-20 w-20 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
+              <Sparkles className="h-10 w-10 text-primary" />
+            </div>
+
+            <h2 className="text-2xl font-heading font-semibold">Ready to Find Gold?</h2>
+
+            <div className="space-y-3">
+              <Button size="lg" className="w-full" onClick={openCamera}>
+                <Camera className="h-5 w-5 mr-2" />
+                Take Photo
+              </Button>
+
+              <Button size="lg" variant="outline" className="w-full" onClick={openUpload}>
+                <Upload className="h-5 w-5 mr-2" />
+                Upload Photo
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {/* IMAGE PREVIEW */}
+        {imagePreview && !result && (
           <Card className="overflow-hidden">
-            <CardContent className="p-6 space-y-6 text-center">
-              {preview ? (
-                <div className="relative">
-                  <img
-                    src={preview}
-                    alt="Preview"
-                    className="w-full rounded-lg shadow-md object-cover"
-                  />
-                </div>
-              ) : (
-                <div className="h-64 bg-muted rounded-xl flex flex-col items-center justify-center space-y-3">
-                  <Sparkles className="h-10 w-10 text-primary" />
-                  <p className="text-muted-foreground">Upload or take a photo to start scanning</p>
-                </div>
-              )}
+            <CardContent className="p-0">
+              <img src={imagePreview} className="w-full object-cover" />
 
-              <div className="flex flex-col sm:flex-row justify-center gap-4">
-                <label className="w-full sm:w-auto">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={handleImageChange}
-                  />
-                  <Button asChild size="lg" className="font-heading font-semibold w-full">
-                    <span>
-                      <Camera className="mr-2 h-5 w-5" />
-                      Take Photo
-                    </span>
-                  </Button>
-                </label>
-
-                <label className="w-full sm:w-auto">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleImageChange}
-                  />
-                  <Button variant="outline" size="lg" className="font-heading font-semibold w-full">
-                    <Upload className="mr-2 h-5 w-5" />
-                    Upload Photo
-                  </Button>
-                </label>
-              </div>
-
-              {image && (
-                <Button
-                  size="lg"
-                  onClick={handleScan}
-                  disabled={isAnalyzing}
-                  className="w-full sm:w-auto mx-auto font-heading font-semibold mt-4"
-                >
-                  {isAnalyzing ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="mr-2 h-5 w-5" /> Analyze Item
-                    </>
-                  )}
+              <div className="p-6">
+                <Button size="lg" className="w-full" disabled>
+                  <Sparkles className="mr-2 h-5 w-5 animate-spin" />
+                  Analyzing...
                 </Button>
-              )}
+              </div>
             </CardContent>
           </Card>
         )}
 
+        {/* RESULTS */}
         {result && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="space-y-6">
             <Card>
-              <CardContent className="p-6 space-y-4">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h2 className="font-heading font-bold text-2xl text-foreground">
-                      {result.brand}
-                    </h2>
-                    <p className="text-muted-foreground">{result.category}</p>
-                  </div>
-                  <Badge variant="outline" className="font-semibold">
-                    AI Confidence: {result.confidence}%
-                  </Badge>
-                </div>
-                <div className="relative w-full h-2 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="absolute top-0 left-0 h-full bg-primary transition-all duration-500"
-                    style={{ width: `${result.confidence}%` }}
-                  ></div>
-                </div>
-                <p className="text-sm text-muted-foreground mt-2">{result.description}</p>
+              <CardContent className="p-4">
+                <img src={imagePreview!} className="rounded-xl w-full" />
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="p-6 text-center">
-                <h3 className="font-heading font-semibold text-xl text-foreground mb-2">
+              <CardContent className="space-y-3">
+                <h2 className="text-3xl font-heading font-bold">{result.brand}</h2>
+                <p className="text-muted-foreground">{result.category}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-primary/20 border-2">
+              <CardContent className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
                   Estimated Resale Value
-                </h3>
-                <p className="text-4xl font-bold text-primary">${result.value}</p>
+                </div>
+                <div className="text-4xl font-heading font-bold text-primary">
+                  ${result.min} - ${result.max}
+                </div>
               </CardContent>
             </Card>
 
-            <div className="flex flex-col sm:flex-row gap-4">
-              <Button className="w-full font-heading font-semibold">
-                <TrendingUp className="mr-2 h-5 w-5" /> View Similar Listings
-              </Button>
-              <Button variant="outline" className="w-full font-heading font-semibold">
-                Save to My Finds
-              </Button>
-            </div>
+            <Button variant="outline" size="lg" className="w-full" onClick={reset}>
+              Scan Another Item
+            </Button>
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }
