@@ -1,94 +1,131 @@
 // api/analyze.ts
-// Simple mock analyzer: always returns a realistic-looking scan result.
-// For now we ignore the actual uploaded image – this keeps everything reliable.
-// Later we can plug Replicate into this same file.
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { FormData, File } from "formdata-node";
+import { fileTypeFromBuffer } from "file-type";
+import fetch from "node-fetch";
 
-type TrendStatus = "hot" | "steady" | "rare";
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
-interface ScanResult {
-  brand: string;
-  category: string;
-  valueMin: number;
-  valueMax: number;
-  condition: string;
-  trendStatus: TrendStatus;
-  confidence: number;
-}
-
-const MOCK_RESULTS: ScanResult[] = [
-  {
-    brand: "Lululemon",
-    category: "Align Leggings",
-    valueMin: 45,
-    valueMax: 75,
-    condition: "Excellent",
-    trendStatus: "hot",
-    confidence: 96,
-  },
-  {
-    brand: "Madewell",
-    category: "High-Rise Skinny Jeans",
-    valueMin: 32,
-    valueMax: 58,
-    condition: "Good",
-    trendStatus: "steady",
-    confidence: 92,
-  },
-  {
-    brand: "Patagonia",
-    category: "Synchilla Snap-T Fleece",
-    valueMin: 65,
-    valueMax: 110,
-    condition: "Excellent",
-    trendStatus: "hot",
-    confidence: 94,
-  },
-  {
-    brand: "Free People",
-    category: "Boho Maxi Dress",
-    valueMin: 40,
-    valueMax: 72,
-    condition: "Good",
-    trendStatus: "steady",
-    confidence: 89,
-  },
-  {
-    brand: "Vintage Nike",
-    category: "Windbreaker Jacket",
-    valueMin: 55,
-    valueMax: 105,
-    condition: "Excellent",
-    trendStatus: "rare",
-    confidence: 90,
-  },
-];
-
-function getRandomResult(): ScanResult {
-  const idx = Math.floor(Math.random() * MOCK_RESULTS.length);
-  return MOCK_RESULTS[idx];
-}
-
-export default async function handler(req: any, res: any) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
-    res.statusCode = 405;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ error: "Method not allowed" }));
-    return;
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const replicateToken = process.env.VITE_REPLICATE_API_TOKEN;
+  if (!replicateToken) {
+    return res.status(500).json({ error: "Missing Replicate token" });
   }
 
   try {
-    // We *could* parse the multipart form here, but for now we just simulate latency.
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    // ---- Read binary upload from request ----
+    const buffers: Uint8Array[] = [];
+    for await (const chunk of req) buffers.push(chunk);
+    const rawBody = Buffer.concat(buffers);
 
-    const result = getRandomResult();
+    // Determine file type
+    const type = await fileTypeFromBuffer(rawBody);
+    if (!type) return res.status(400).json({ error: "Invalid image upload" });
 
-    res.statusCode = 200;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify(result));
-  } catch (error) {
-    console.error("Error in /api/analyze:", error);
-    res.statusCode = 500;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ error: "Failed to analyze image" }));
+    const imageFile = new File([rawBody], `upload.${type.ext}`, {
+      type: type.mime,
+    });
+
+    // ---- Upload file to Replicate ----
+    const uploadForm = new FormData();
+    uploadForm.set("file", imageFile);
+
+    const uploadRes = await fetch("https://api.replicate.com/v1/files", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${replicateToken}`,
+      },
+      body: uploadForm,
+    });
+
+    const uploaded = await uploadRes.json();
+    if (!uploaded?.url) {
+      console.error("Upload failed:", uploaded);
+      return res.status(500).json({ error: "Image upload failed" });
+    }
+
+    const imageUrl = uploaded.url;
+
+    // ---- Build Vision Prompt ----
+    const prompt = `
+You are an expert reseller and authentication specialist.
+Analyze the object in this image:
+
+${imageUrl}
+
+Return ONLY a JSON object with the following fields:
+{
+  "brand": "Brand Name",
+  "category": "Category of item",
+  "min": 50,
+  "max": 120
+}
+Prices should reflect realistic SECOND-HAND resale value on eBay/Poshmark/Depop.
+    `;
+
+    // ---- Start Vision Model Prediction ----
+    const predictionRes = await fetch(
+      "https://api.replicate.com/v1/models/meta/meta-llama-3.2-vision-instruct/predictions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${replicateToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: {
+            prompt,
+            image: imageUrl,
+          },
+        }),
+      }
+    );
+
+    const prediction = await predictionRes.json();
+
+    if (!prediction?.urls?.get) {
+      console.error("Prediction error:", prediction);
+      return res.status(500).json({ error: "Model request failed" });
+    }
+
+    // ---- Poll until the model finishes ----
+    let result = prediction;
+    while (result.status === "starting" || result.status === "processing") {
+      await new Promise((r) => setTimeout(r, 1000));
+      const poll = await fetch(result.urls.get, {
+        headers: { Authorization: `Bearer ${replicateToken}` },
+      });
+      result = await poll.json();
+    }
+
+    if (!result.output) {
+      console.error("No output:", result);
+      return res.status(500).json({ error: "Model returned no output" });
+    }
+
+    // ---- Convert output to JSON ----
+    const rawText =
+      Array.isArray(result.output) ? result.output.join(" ") : String(result.output);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText.replace(/```json|```/g, "").trim());
+    } catch (err) {
+      console.error("JSON parse failed:", rawText);
+      return res.status(500).json({ error: "Model output unreadable" });
+    }
+
+    return res.status(200).json(parsed);
+  } catch (err) {
+    console.error("Analyze API error:", err);
+    return res.status(500).json({ error: "Server error analyzing image" });
   }
 }
