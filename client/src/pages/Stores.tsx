@@ -1,8 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Plus, Star, Calendar, Navigation, Loader2 } from "lucide-react";
+import {
+  MapPin,
+  Plus,
+  Star,
+  Calendar,
+  Navigation,
+  Loader2,
+} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 interface Store {
@@ -16,6 +26,8 @@ interface Store {
   notes: string;
   distance: string;
 }
+
+const STORAGE_KEY = "goodwill-gold:my-thrift-spots";
 
 const mockStores: Store[] = [
   {
@@ -37,7 +49,8 @@ const mockStores: Store[] = [
     lastVisit: "1 week ago",
     totalFinds: 18,
     rating: 4.0,
-    notes: "Good selection of Lululemon. Check the back racks for hidden gems.",
+    notes:
+      "Good selection of Lululemon. Check the back racks for hidden gems.",
     distance: "1.2 mi",
   },
   {
@@ -48,7 +61,8 @@ const mockStores: Store[] = [
     lastVisit: "3 days ago",
     totalFinds: 42,
     rating: 5.0,
-    notes: "Pay by the pound! Chaotic but amazing finds. Bring gloves. Best on weekday mornings.",
+    notes:
+      "Pay by the pound! Chaotic but amazing finds. Bring gloves. Best on weekday mornings.",
     distance: "3.5 mi",
   },
   {
@@ -59,7 +73,8 @@ const mockStores: Store[] = [
     lastVisit: "5 days ago",
     totalFinds: 12,
     rating: 3.5,
-    notes: "Curated selection, higher prices but quality items. Good for Free People and Madewell.",
+    notes:
+      "Curated selection, higher prices but quality items. Good for Free People and Madewell.",
     distance: "1.8 mi",
   },
   {
@@ -70,10 +85,24 @@ const mockStores: Store[] = [
     lastVisit: "1 week ago",
     totalFinds: 31,
     rating: 4.5,
-    notes: "Huge store! Great for vintage denim. Half-off Saturdays. Furniture section is gold.",
+    notes:
+      "Huge store! Great for vintage denim. Half-off Saturdays. Furniture section is gold.",
     distance: "2.3 mi",
   },
 ];
+
+function loadInitialStores(): Store[] {
+  if (typeof window === "undefined") return mockStores;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return mockStores;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return mockStores;
+    return parsed;
+  } catch {
+    return mockStores;
+  }
+}
 
 function StoreCard({ store }: { store: Store }) {
   const openDirections = () => {
@@ -109,14 +138,14 @@ function StoreCard({ store }: { store: Store }) {
             <div className="flex items-center justify-center gap-1">
               <Star className="h-4 w-4 fill-primary text-primary" />
               <span className="font-heading font-bold text-lg text-foreground">
-                {store.rating}
+                {store.rating.toFixed(1)}
               </span>
             </div>
             <div className="text-xs text-muted-foreground">Rating</div>
           </div>
           <div className="text-center">
             <div className="font-heading font-bold text-lg text-foreground">
-              {store.distance}
+              {store.distance || "—"}
             </div>
             <div className="text-xs text-muted-foreground">Away</div>
           </div>
@@ -129,7 +158,7 @@ function StoreCard({ store }: { store: Store }) {
             <span>Last visit: {store.lastVisit}</span>
           </div>
           <p className="text-sm text-foreground bg-muted/30 rounded-lg p-3">
-            {store.notes}
+            {store.notes || "No notes yet – add your sourcing tips here."}
           </p>
         </div>
 
@@ -158,11 +187,33 @@ function StoreCard({ store }: { store: Store }) {
 }
 
 export default function Stores() {
+  const [stores, setStores] = useState<Store[]>(() => loadInitialStores());
   const [isLocating, setIsLocating] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+
+  const [name, setName] = useState("");
+  const [type, setType] = useState("Thrift Store");
+  const [address, setAddress] = useState("");
+  const [rating, setRating] = useState("4.5");
+  const [notes, setNotes] = useState("");
+
+  // Persist to localStorage whenever stores change
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stores));
+    } catch {
+      // ignore
+    }
+  }, [stores]);
 
   const handleOpenMap = () => {
     if (!navigator.geolocation) {
       toast.error("Geolocation not supported in this browser.");
+      window.open(
+        "https://www.google.com/maps/search/thrift+or+resale+stores/",
+        "_blank"
+      );
       return;
     }
 
@@ -186,6 +237,54 @@ export default function Stores() {
     );
   };
 
+  const handleAddStore = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const trimmedName = name.trim();
+    const trimmedAddress = address.trim();
+
+    if (!trimmedName || !trimmedAddress) {
+      toast.error("Please add at least a store name and address.");
+      return;
+    }
+
+    const parsedRating = Number(rating);
+    const safeRating =
+      Number.isFinite(parsedRating) && parsedRating > 0 && parsedRating <= 5
+        ? parsedRating
+        : 4.5;
+
+    const newStore: Store = {
+      id: Date.now(),
+      name: trimmedName,
+      type: type.trim() || "Thrift Store",
+      address: trimmedAddress,
+      lastVisit: "Not yet",
+      totalFinds: 0,
+      rating: safeRating,
+      notes: notes.trim(),
+      distance: "—",
+    };
+
+    setStores((prev) => [newStore, ...prev]);
+
+    // Reset form
+    setName("");
+    setType("Thrift Store");
+    setAddress("");
+    setRating("4.5");
+    setNotes("");
+    setIsAdding(false);
+
+    toast.success("✨ Store added to My Thrift Spots!");
+  };
+
+  const totalFindsAll = stores.reduce((sum, s) => sum + (s.totalFinds || 0), 0);
+  const avgRating =
+    stores.length > 0
+      ? stores.reduce((sum, s) => sum + (s.rating || 0), 0) / stores.length
+      : 0;
+
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
@@ -195,9 +294,13 @@ export default function Stores() {
             <h1 className="font-heading font-bold text-xl text-foreground">
               My Thrift Spots
             </h1>
-            <Button size="sm" className="font-heading font-semibold">
+            <Button
+              size="sm"
+              className="font-heading font-semibold"
+              onClick={() => setIsAdding((v) => !v)}
+            >
               <Plus className="h-4 w-4 mr-2" />
-              Add Store
+              {isAdding ? "Close" : "Add Store"}
             </Button>
           </div>
         </div>
@@ -231,29 +334,127 @@ export default function Stores() {
                   </>
                 )}
               </Button>
+              <p className="mt-3 text-xs text-muted-foreground max-w-md mx-auto">
+                Tip: When you discover a great spot in Google Maps, copy the
+                name & address and add it below so you can track your best
+                sourcing locations over time.
+              </p>
             </div>
           </CardContent>
         </Card>
 
+        {/* Add Store Form */}
+        {isAdding && (
+          <Card>
+            <CardContent className="p-6 space-y-4">
+              <h2 className="font-heading font-semibold text-lg text-foreground mb-2">
+                Add a New Thrift Spot
+              </h2>
+              <form onSubmit={handleAddStore} className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="store-name">Store Name</Label>
+                    <Input
+                      id="store-name"
+                      placeholder="e.g., Goodwill - Elm Street"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="store-type">Store Type</Label>
+                    <Input
+                      id="store-type"
+                      placeholder="Goodwill, Salvation Army, Vintage, etc."
+                      value={type}
+                      onChange={(e) => setType(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="store-address">Address</Label>
+                  <Input
+                    id="store-address"
+                    placeholder="Paste from Google Maps"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                  />
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="store-rating">Rating (1–5)</Label>
+                    <Input
+                      id="store-rating"
+                      type="number"
+                      step="0.1"
+                      min="1"
+                      max="5"
+                      value={rating}
+                      onChange={(e) => setRating(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Last Visit</Label>
+                    <Input
+                      disabled
+                      value="Set automatically after your first trip (coming soon)"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="store-notes">Notes</Label>
+                  <Textarea
+                    id="store-notes"
+                    placeholder="Best days to go, what you usually find, pricing, etc."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsAdding(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="font-heading font-semibold">
+                    Save Store
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Stats + Store List */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid md:grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-4 text-center">
               <div className="font-heading font-bold text-2xl text-foreground">
-                {mockStores.length}
+                {stores.length}
               </div>
               <div className="text-xs text-muted-foreground">Saved Stores</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="font-heading font-bold text-2xl text-foreground">127</div>
+              <div className="font-heading font-bold text-2xl text-foreground">
+                {totalFindsAll}
+              </div>
               <div className="text-xs text-muted-foreground">Total Finds</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="font-heading font-bold text-2xl text-foreground">4.3</div>
+              <div className="font-heading font-bold text-2xl text-foreground">
+                {stores.length ? avgRating.toFixed(1) : "—"}
+              </div>
               <div className="text-xs text-muted-foreground">Avg Rating</div>
             </CardContent>
           </Card>
@@ -261,10 +462,17 @@ export default function Stores() {
 
         {/* Store Cards */}
         <div className="space-y-4">
-          <h2 className="font-heading font-semibold text-lg text-foreground">Your Stores</h2>
-          {mockStores.map((store) => (
-            <StoreCard key={store.id} store={store} />
-          ))}
+          <h2 className="font-heading font-semibold text-lg text-foreground">
+            Your Stores
+          </h2>
+          {stores.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No stores saved yet. Use <strong>Add Store</strong> above after
+              you find a good spot on Google Maps.
+            </p>
+          ) : (
+            stores.map((store) => <StoreCard key={store.id} store={store} />)
+          )}
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Camera, TrendingUp, User } from "lucide-react";
+import { ArrowLeft, Camera, TrendingUp, User, MapPin } from "lucide-react";
 import { Link } from "wouter";
 
 export default function DashboardPage() {
@@ -15,6 +15,7 @@ export default function DashboardPage() {
               Goodwill Gold
             </span>
           </div>
+
           <div className="flex items-center gap-4">
             <User className="h-5 w-5 text-muted-foreground" />
             <Link href="/">
@@ -39,7 +40,8 @@ export default function DashboardPage() {
           </div>
 
           {/* Quick Actions */}
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-4 gap-6">
+
             {/* Launch Scanner */}
             <Card className="border-2 hover:border-primary/50 transition-all hover:shadow-lg">
               <CardContent className="p-6 text-center space-y-4">
@@ -97,6 +99,27 @@ export default function DashboardPage() {
                 </Button>
               </CardContent>
             </Card>
+
+            {/* ⭐ NEW — My Thrift Spots */}
+            <Card className="border-2 hover:border-primary/50 transition-all hover:shadow-lg">
+              <CardContent className="p-6 text-center space-y-4">
+                <div className="h-12 w-12 mx-auto rounded-xl bg-purple-200/40 flex items-center justify-center">
+                  <MapPin className="h-6 w-6 text-purple-600" />
+                </div>
+                <h3 className="font-heading font-semibold text-xl text-foreground">
+                  My Thrift Spots
+                </h3>
+                <p className="text-muted-foreground">
+                  See your saved stores and local resale favorites.
+                </p>
+                <Link href="/stores">
+                  <Button variant="outline" size="sm" className="mt-2 font-medium">
+                    View Stores
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
           </div>
 
           {/* Summary Stats */}
